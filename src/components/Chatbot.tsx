@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { Send, Bot, User, AlertCircle } from "lucide-react";
+import { Send, Bot, User, AlertCircle, Menu } from "lucide-react";
+import ChatHistory from "./ChatHistory";
 
 interface Message {
   id: string;
@@ -23,6 +24,11 @@ const Chatbot: React.FC = () => {
   const [inputText, setInputText] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentConversationId, setCurrentConversationId] = useState<
+    string | null
+  >(null);
+  const [showHistory, setShowHistory] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -34,10 +40,106 @@ const Chatbot: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  const generateConversationTitle = (firstMessage: string): string => {
+    // 첫 번째 메시지의 첫 30자를 제목으로 사용
+    return firstMessage.length > 30
+      ? firstMessage.substring(0, 30) + "..."
+      : firstMessage;
+  };
+
+  const createNewConversation = async (
+    firstMessage?: string
+  ): Promise<string | null> => {
+    try {
+      const title = firstMessage
+        ? generateConversationTitle(firstMessage)
+        : `새 대화 ${new Date().toLocaleString("ko-KR")}`;
+
+      const response = await fetch("/api/conversations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ title }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.conversation.id;
+      }
+    } catch (error) {
+      console.error("Error creating conversation:", error);
+    }
+    return null;
+  };
+
+  const loadConversation = async (conversationId: string) => {
+    try {
+      const response = await fetch(
+        `/api/conversations/${conversationId}/messages`
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const loadedMessages = data.messages.map((msg: any) => ({
+          id: msg.id,
+          text: msg.content,
+          sender: msg.sender,
+          timestamp: new Date(msg.created_at),
+        }));
+
+        // 메시지가 있으면 로드된 메시지로 교체, 없으면 초기 메시지 유지
+        if (loadedMessages.length > 0) {
+          setMessages(loadedMessages);
+        } else {
+          setMessages([
+            {
+              id: "1",
+              text: "안녕하세요! Gemini AI와 함께하는 챗봇입니다. 무엇을 도와드릴까요?",
+              sender: "bot",
+              timestamp: new Date(),
+            },
+          ]);
+        }
+
+        setCurrentConversationId(conversationId);
+      }
+    } catch (error) {
+      console.error("Error loading conversation:", error);
+    }
+  };
+
+  const handleNewConversation = () => {
+    setMessages([
+      {
+        id: "1",
+        text: "안녕하세요! Gemini AI와 함께하는 챗봇입니다. 무엇을 도와드릴까요?",
+        sender: "bot",
+        timestamp: new Date(),
+      },
+    ]);
+    setCurrentConversationId(null);
+    setShowHistory(false);
+  };
+
+  const handleSelectConversation = (conversationId: string) => {
+    loadConversation(conversationId);
+    setShowHistory(false);
+  };
+
   const handleSendMessage = async () => {
     if (!inputText.trim() || isTyping) return;
 
     const currentInput = inputText;
+    let convId = currentConversationId;
+
+    // 새 대화인 경우 대화 생성
+    if (!convId) {
+      convId = await createNewConversation(currentInput);
+      if (convId) {
+        setCurrentConversationId(convId);
+      }
+    }
+
     const userMessage: Message = {
       id: Date.now().toString(),
       text: currentInput,
@@ -89,6 +191,7 @@ const Chatbot: React.FC = () => {
         body: JSON.stringify({
           message: currentInput,
           chatHistory: chatHistory,
+          conversationId: convId,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -177,126 +280,162 @@ const Chatbot: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-      {/* 채팅 헤더 */}
-      <div className="bg-blue-600 dark:bg-blue-700 text-white p-4">
-        <div className="flex items-center space-x-2">
-          <Bot className="w-6 h-6" />
-          <h2 className="text-xl font-semibold">AI 챗봇</h2>
-          <div className="ml-auto">
-            <span className="inline-block w-3 h-3 bg-green-400 rounded-full"></span>
-            <span className="ml-2 text-sm">온라인</span>
+    <div className="flex h-screen max-w-7xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+      {/* 히스토리 사이드바 */}
+      {showHistory && (
+        <>
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+            onClick={() => setShowHistory(false)}
+          />
+          <div
+            className={`${
+              showHistory ? "block" : "hidden"
+            } lg:block fixed lg:relative z-50 lg:z-auto`}
+          >
+            <ChatHistory
+              currentConversationId={currentConversationId}
+              onSelectConversation={handleSelectConversation}
+              onNewConversation={handleNewConversation}
+            />
+          </div>
+        </>
+      )}
+
+      {/* 메인 채팅 영역 */}
+      <div className="flex-1 flex flex-col">
+        {/* 채팅 헤더 */}
+        <div className="bg-blue-600 dark:bg-blue-700 text-white p-4">
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="lg:hidden p-1 hover:bg-blue-700 dark:hover:bg-blue-600 rounded"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              className="hidden lg:block p-1 hover:bg-blue-700 dark:hover:bg-blue-600 rounded"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <Bot className="w-6 h-6" />
+            <h2 className="text-xl font-semibold">AI 챗봇</h2>
+            <div className="ml-auto">
+              <span className="inline-block w-3 h-3 bg-green-400 rounded-full"></span>
+              <span className="ml-2 text-sm">온라인</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* 메시지 영역 */}
-      <div className="h-96 overflow-y-auto p-4 space-y-4">
-        {messages.map((message) => (
-          <div
-            key={message.id}
-            className={`flex items-start space-x-2 ${
-              message.sender === "user" ? "justify-end" : "justify-start"
-            }`}
-          >
-            {message.sender === "bot" && (
+        {/* 메시지 영역 */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {messages.map((message) => (
+            <div
+              key={message.id}
+              className={`flex items-start space-x-2 ${
+                message.sender === "user" ? "justify-end" : "justify-start"
+              }`}
+            >
+              {message.sender === "bot" && (
+                <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
+                  <Bot className="w-4 h-4 text-white" />
+                </div>
+              )}
+              <div
+                className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
+                  message.sender === "user"
+                    ? "bg-blue-600 text-white"
+                    : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white"
+                }`}
+              >
+                <p className="text-sm whitespace-pre-wrap">{message.text}</p>
+                {message.isStreaming && (
+                  <div className="flex items-center space-x-2 mt-2">
+                    <div className="flex space-x-1">
+                      <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"></div>
+                      <div
+                        className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"
+                        style={{ animationDelay: "0.2s" }}
+                      ></div>
+                      <div
+                        className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"
+                        style={{ animationDelay: "0.4s" }}
+                      ></div>
+                    </div>
+                    <span className="text-xs text-gray-500">입력 중...</span>
+                  </div>
+                )}
+                <p className="text-xs mt-1 opacity-70">
+                  {message.timestamp.toLocaleTimeString()}
+                </p>
+              </div>
+              {message.sender === "user" && (
+                <div className="flex-shrink-0 w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center">
+                  <User className="w-4 h-4 text-white" />
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* 타이핑 인디케이터 */}
+          {isTyping && (
+            <div className="flex items-start space-x-2">
               <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
                 <Bot className="w-4 h-4 text-white" />
               </div>
-            )}
-            <div
-              className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                message.sender === "user"
-                  ? "bg-blue-600 text-white"
-                  : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white"
-              }`}
-            >
-              <p className="text-sm whitespace-pre-wrap">{message.text}</p>
-              {message.isStreaming && (
-                <div className="flex items-center space-x-2 mt-2">
-                  <div className="flex space-x-1">
-                    <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"></div>
-                    <div
-                      className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"
-                      style={{ animationDelay: "0.2s" }}
-                    ></div>
-                    <div
-                      className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"
-                      style={{ animationDelay: "0.4s" }}
-                    ></div>
-                  </div>
-                  <span className="text-xs text-gray-500">입력 중...</span>
+              <div className="bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg">
+                <div className="flex space-x-1">
+                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                  <div
+                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.1s" }}
+                  ></div>
+                  <div
+                    className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                    style={{ animationDelay: "0.2s" }}
+                  ></div>
                 </div>
+              </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+
+        {/* 입력 영역 */}
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+          {/* 에러 메시지 표시 */}
+          {error && (
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center space-x-2">
+              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            </div>
+          )}
+
+          <div className="flex space-x-2">
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyPress={handleKeyPress}
+              placeholder={
+                isTyping ? "AI가 응답하는 중..." : "메시지를 입력하세요..."
+              }
+              className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50"
+              disabled={isTyping}
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={!inputText.trim() || isTyping}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center min-w-[44px]"
+            >
+              {isTyping ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                <Send className="w-4 h-4" />
               )}
-              <p className="text-xs mt-1 opacity-70">
-                {message.timestamp.toLocaleTimeString()}
-              </p>
-            </div>
-            {message.sender === "user" && (
-              <div className="flex-shrink-0 w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center">
-                <User className="w-4 h-4 text-white" />
-              </div>
-            )}
+            </button>
           </div>
-        ))}
-
-        {/* 타이핑 인디케이터 */}
-        {isTyping && (
-          <div className="flex items-start space-x-2">
-            <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-              <Bot className="w-4 h-4 text-white" />
-            </div>
-            <div className="bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg">
-              <div className="flex space-x-1">
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
-                <div
-                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.1s" }}
-                ></div>
-                <div
-                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
-                  style={{ animationDelay: "0.2s" }}
-                ></div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* 입력 영역 */}
-      <div className="border-t border-gray-200 dark:border-gray-700 p-4">
-        {/* 에러 메시지 표시 */}
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
-            <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
-          </div>
-        )}
-
-        <div className="flex space-x-2">
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder={
-              isTyping ? "AI가 응답하는 중..." : "메시지를 입력하세요..."
-            }
-            className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white disabled:opacity-50"
-            disabled={isTyping}
-          />
-          <button
-            onClick={handleSendMessage}
-            disabled={!inputText.trim() || isTyping}
-            className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center min-w-[44px]"
-          >
-            {isTyping ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-            ) : (
-              <Send className="w-4 h-4" />
-            )}
-          </button>
         </div>
       </div>
     </div>

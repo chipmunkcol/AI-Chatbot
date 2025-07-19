@@ -1,17 +1,29 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
+import { supabase } from "@/lib/supabase";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, chatHistory } = await req.json();
+    const { message, chatHistory, conversationId } = await req.json();
 
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         { error: "Gemini API key not configured" },
         { status: 500 }
       );
+    }
+
+    // 사용자 메시지를 데이터베이스에 저장
+    if (conversationId) {
+      await supabase.from("messages").insert([
+        {
+          conversation_id: conversationId,
+          content: message,
+          sender: "user",
+        },
+      ]);
     }
 
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
@@ -52,6 +64,7 @@ export async function POST(req: NextRequest) {
     });
 
     const result = await chat.sendMessageStream(message);
+    let fullResponse = "";
 
     // 스트리밍 응답 생성
     const encoder = new TextEncoder();
@@ -60,8 +73,26 @@ export async function POST(req: NextRequest) {
         try {
           for await (const chunk of result.stream) {
             const chunkText = chunk.text();
+            fullResponse += chunkText;
             const data = `data: ${JSON.stringify({ text: chunkText })}\n\n`;
             controller.enqueue(encoder.encode(data));
+          }
+
+          // 봇 응답을 데이터베이스에 저장
+          if (conversationId && fullResponse) {
+            await supabase.from("messages").insert([
+              {
+                conversation_id: conversationId,
+                content: fullResponse,
+                sender: "bot",
+              },
+            ]);
+
+            // 대화 업데이트 시간 갱신
+            await supabase
+              .from("conversations")
+              .update({ updated_at: new Date().toISOString() })
+              .eq("id", conversationId);
           }
 
           // 스트림 종료 신호
