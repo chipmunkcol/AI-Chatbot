@@ -1,12 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { getEmbedding } from "@/lib/openai";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, chatHistory, conversationId } = await req.json();
+    const { message, chatHistory, conversationId, customBotId } =
+      await req.json();
 
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
@@ -26,10 +28,53 @@ export async function POST(req: NextRequest) {
       ]);
     }
 
+    let systemInstructions = "";
+    let contextualInformation = "";
+
+    // 커스텀 봇이 선택된 경우 RAG 검색 수행
+    if (customBotId) {
+      try {
+        // 커스텀 봇 정보 조회
+        const { data: botData, error: botError } = await supabase
+          .from("custom_bots")
+          .select("name, instructions")
+          .eq("id", customBotId)
+          .single();
+
+        if (!botError && botData) {
+          systemInstructions = botData.instructions || "";
+
+          // RAG 검색 수행 (OpenAI API 키가 있는 경우에만)
+          if (process.env.OPENAI_API_KEY) {
+            const queryEmbedding = await getEmbedding(message);
+
+            const { data: searchResults, error: searchError } =
+              await supabase.rpc("match_knowledge_base", {
+                query_embedding: queryEmbedding,
+                bot_id: customBotId,
+                match_threshold: 0.7,
+                match_count: 3,
+              });
+
+            if (!searchError && searchResults && searchResults.length > 0) {
+              contextualInformation = searchResults
+                .map(
+                  (result: any, index: number) =>
+                    `[참고자료 ${index + 1}]\n${result.content}\n`
+                )
+                .join("\n");
+            }
+          }
+        }
+      } catch (ragError) {
+        console.error("RAG search error:", ragError);
+        // RAG 검색 실패시에도 일반 채팅은 계속 진행
+      }
+    }
+
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     // 채팅 히스토리를 Gemini 형식으로 변환
-    // Gemini API는 히스토리가 user 역할로 시작해야 하므로 초기 봇 메시지 제외
     let history =
       chatHistory
         ?.filter(
@@ -49,6 +94,16 @@ export async function POST(req: NextRequest) {
       history = [];
     }
 
+    // 시스템 지시사항과 컨텍스트 정보를 메시지에 추가
+    let enhancedMessage = message;
+    if (systemInstructions || contextualInformation) {
+      enhancedMessage = `${
+        systemInstructions ? `[시스템 지시사항]\n${systemInstructions}\n\n` : ""
+      }${
+        contextualInformation ? `[참고 정보]\n${contextualInformation}\n\n` : ""
+      }[사용자 질문]\n${message}`;
+    }
+
     console.log("Chat history length:", history.length);
     console.log(
       "First message role:",
@@ -63,7 +118,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const result = await chat.sendMessageStream(message);
+    const result = await chat.sendMessageStream(enhancedMessage);
     let fullResponse = "";
 
     // 스트리밍 응답 생성

@@ -27,6 +27,10 @@ const Chatbot: React.FC = () => {
   const [currentConversationId, setCurrentConversationId] = useState<
     string | null
   >(null);
+  const [currentCustomBotId, setCurrentCustomBotId] = useState<string | null>(
+    null
+  );
+  const [selectedBotInfo, setSelectedBotInfo] = useState<any>(null);
   const [showHistory, setShowHistory] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -112,7 +116,11 @@ const Chatbot: React.FC = () => {
     setMessages([
       {
         id: "1",
-        text: "안녕하세요! Gemini AI와 함께하는 챗봇입니다. 무엇을 도와드릴까요?",
+        text: currentCustomBotId
+          ? `안녕하세요! ${
+              selectedBotInfo?.name || "커스텀 봇"
+            }과 함께하는 챗봇입니다. 무엇을 도와드릴까요?`
+          : "안녕하세요! Gemini AI와 함께하는 챗봇입니다. 무엇을 도와드릴까요?",
         sender: "bot",
         timestamp: new Date(),
       },
@@ -123,7 +131,39 @@ const Chatbot: React.FC = () => {
 
   const handleSelectConversation = (conversationId: string) => {
     loadConversation(conversationId);
+    setCurrentCustomBotId(null);
+    setSelectedBotInfo(null);
     setShowHistory(false);
+  };
+
+  const handleSelectCustomBot = async (customBotId: string) => {
+    if (customBotId) {
+      setCurrentCustomBotId(customBotId);
+
+      // 커스텀 봇 정보 가져오기
+      try {
+        const response = await fetch(`/api/custom-bots/${customBotId}/search`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ query: "info" }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setSelectedBotInfo(data.botInfo);
+        }
+      } catch (error) {
+        console.error("Error fetching bot info:", error);
+      }
+
+      // 새 대화 시작
+      handleNewConversation();
+    } else {
+      setCurrentCustomBotId(null);
+      setSelectedBotInfo(null);
+    }
   };
 
   const handleSendMessage = async () => {
@@ -179,7 +219,8 @@ const Chatbot: React.FC = () => {
           !msg.isStreaming &&
           !(
             msg.sender === "bot" &&
-            msg.text.includes("Gemini AI와 함께하는 챗봇입니다")
+            (msg.text.includes("Gemini AI와 함께하는 챗봇입니다") ||
+              msg.text.includes("커스텀 봇"))
           )
       );
 
@@ -192,6 +233,7 @@ const Chatbot: React.FC = () => {
           message: currentInput,
           chatHistory: chatHistory,
           conversationId: convId,
+          customBotId: currentCustomBotId,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -279,6 +321,20 @@ const Chatbot: React.FC = () => {
     }
   };
 
+  const getBotDisplayName = () => {
+    if (currentCustomBotId && selectedBotInfo) {
+      return selectedBotInfo.name;
+    }
+    return "AI 챗봇";
+  };
+
+  const getBotIcon = () => {
+    if (currentCustomBotId) {
+      return "🤖";
+    }
+    return null;
+  };
+
   return (
     <div className="flex h-screen max-w-7xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
       {/* 히스토리 사이드바 */}
@@ -295,7 +351,9 @@ const Chatbot: React.FC = () => {
           >
             <ChatHistory
               currentConversationId={currentConversationId}
+              currentCustomBotId={currentCustomBotId}
               onSelectConversation={handleSelectConversation}
+              onSelectCustomBot={handleSelectCustomBot}
               onNewConversation={handleNewConversation}
             />
           </div>
@@ -305,22 +363,49 @@ const Chatbot: React.FC = () => {
       {/* 메인 채팅 영역 */}
       <div className="flex-1 flex flex-col">
         {/* 채팅 헤더 */}
-        <div className="bg-blue-600 dark:bg-blue-700 text-white p-4">
+        <div
+          className={`${
+            currentCustomBotId
+              ? "bg-purple-600 dark:bg-purple-700"
+              : "bg-blue-600 dark:bg-blue-700"
+          } text-white p-4`}
+        >
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className="lg:hidden p-1 hover:bg-blue-700 dark:hover:bg-blue-600 rounded"
+              className={`lg:hidden p-1 rounded ${
+                currentCustomBotId
+                  ? "hover:bg-purple-700 dark:hover:bg-purple-600"
+                  : "hover:bg-blue-700 dark:hover:bg-blue-600"
+              }`}
             >
               <Menu className="w-5 h-5" />
             </button>
             <button
               onClick={() => setShowHistory(!showHistory)}
-              className="hidden lg:block p-1 hover:bg-blue-700 dark:hover:bg-blue-600 rounded"
+              className={`hidden lg:block p-1 rounded ${
+                currentCustomBotId
+                  ? "hover:bg-purple-700 dark:hover:bg-purple-600"
+                  : "hover:bg-blue-700 dark:hover:bg-blue-600"
+              }`}
             >
               <Menu className="w-5 h-5" />
             </button>
-            <Bot className="w-6 h-6" />
-            <h2 className="text-xl font-semibold">AI 챗봇</h2>
+            <div className="flex items-center">
+              {getBotIcon() ? (
+                <span className="text-lg mr-2">{getBotIcon()}</span>
+              ) : (
+                <Bot className="w-6 h-6 mr-2" />
+              )}
+              <div>
+                <h2 className="text-xl font-semibold">{getBotDisplayName()}</h2>
+                {currentCustomBotId && selectedBotInfo?.description && (
+                  <p className="text-sm opacity-80">
+                    {selectedBotInfo.description}
+                  </p>
+                )}
+              </div>
+            </div>
             <div className="ml-auto">
               <span className="inline-block w-3 h-3 bg-green-400 rounded-full"></span>
               <span className="ml-2 text-sm">온라인</span>
@@ -338,14 +423,24 @@ const Chatbot: React.FC = () => {
               }`}
             >
               {message.sender === "bot" && (
-                <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                  <Bot className="w-4 h-4 text-white" />
+                <div
+                  className={`flex-shrink-0 w-8 h-8 ${
+                    currentCustomBotId ? "bg-purple-600" : "bg-blue-600"
+                  } rounded-full flex items-center justify-center`}
+                >
+                  {getBotIcon() ? (
+                    <span className="text-sm">{getBotIcon()}</span>
+                  ) : (
+                    <Bot className="w-4 h-4 text-white" />
+                  )}
                 </div>
               )}
               <div
                 className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
                   message.sender === "user"
-                    ? "bg-blue-600 text-white"
+                    ? currentCustomBotId
+                      ? "bg-purple-600 text-white"
+                      : "bg-blue-600 text-white"
                     : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white"
                 }`}
               >
@@ -353,13 +448,21 @@ const Chatbot: React.FC = () => {
                 {message.isStreaming && (
                   <div className="flex items-center space-x-2 mt-2">
                     <div className="flex space-x-1">
-                      <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"></div>
                       <div
-                        className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"
+                        className={`w-1 h-1 ${
+                          currentCustomBotId ? "bg-purple-500" : "bg-blue-500"
+                        } rounded-full animate-pulse`}
+                      ></div>
+                      <div
+                        className={`w-1 h-1 ${
+                          currentCustomBotId ? "bg-purple-500" : "bg-blue-500"
+                        } rounded-full animate-pulse`}
                         style={{ animationDelay: "0.2s" }}
                       ></div>
                       <div
-                        className="w-1 h-1 bg-blue-500 rounded-full animate-pulse"
+                        className={`w-1 h-1 ${
+                          currentCustomBotId ? "bg-purple-500" : "bg-blue-500"
+                        } rounded-full animate-pulse`}
                         style={{ animationDelay: "0.4s" }}
                       ></div>
                     </div>
@@ -381,8 +484,16 @@ const Chatbot: React.FC = () => {
           {/* 타이핑 인디케이터 */}
           {isTyping && (
             <div className="flex items-start space-x-2">
-              <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-                <Bot className="w-4 h-4 text-white" />
+              <div
+                className={`flex-shrink-0 w-8 h-8 ${
+                  currentCustomBotId ? "bg-purple-600" : "bg-blue-600"
+                } rounded-full flex items-center justify-center`}
+              >
+                {getBotIcon() ? (
+                  <span className="text-sm">{getBotIcon()}</span>
+                ) : (
+                  <Bot className="w-4 h-4 text-white" />
+                )}
               </div>
               <div className="bg-gray-200 dark:bg-gray-700 px-4 py-2 rounded-lg">
                 <div className="flex space-x-1">
@@ -427,7 +538,11 @@ const Chatbot: React.FC = () => {
             <button
               onClick={handleSendMessage}
               disabled={!inputText.trim() || isTyping}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center min-w-[44px]"
+              className={`${
+                currentCustomBotId
+                  ? "bg-purple-600 hover:bg-purple-700"
+                  : "bg-blue-600 hover:bg-blue-700"
+              } disabled:bg-gray-400 text-white px-4 py-2 rounded-lg transition-colors duration-200 flex items-center justify-center min-w-[44px]`}
             >
               {isTyping ? (
                 <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
