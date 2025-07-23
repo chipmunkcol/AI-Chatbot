@@ -68,6 +68,70 @@ npm run dev
 
 http://localhost:3000에서 애플리케이션을 확인할 수 있습니다.
 
+## Vercel 배포
+
+### 1. Vercel 계정 준비
+
+1. [Vercel](https://vercel.com)에 가입합니다.
+2. GitHub 계정과 연동합니다.
+
+### 2. 프로젝트 배포
+
+#### 방법 1: Vercel CLI 사용
+
+```bash
+# Vercel CLI 설치
+npm i -g vercel
+
+# 프로젝트 루트에서 배포
+vercel
+
+# 초기 설정 질문에 답변
+```
+
+#### 방법 2: Vercel 웹 대시보드 사용
+
+1. [Vercel 대시보드](https://vercel.com/dashboard)에 접속
+2. "New Project" 클릭
+3. GitHub 저장소 선택
+4. Next.js 프로젝트로 자동 감지됨
+5. "Deploy" 클릭
+
+### 3. 환경 변수 설정
+
+배포 후 Vercel 대시보드에서 환경 변수를 설정해야 합니다:
+
+1. 프로젝트 → Settings → Environment Variables
+2. 다음 환경 변수들을 추가:
+
+```env
+# Gemini AI
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url_here
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key_here
+
+# OpenAI (RAG 기능용)
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+### 4. 도메인 설정 (선택사항)
+
+1. Vercel 프로젝트 → Settings → Domains
+2. 커스텀 도메인 추가 또는 Vercel 제공 도메인 사용
+
+### 5. 자동 배포 설정
+
+- `main` 브랜치에 푸시할 때마다 자동 배포됩니다.
+- Pull Request 생성 시 프리뷰 배포가 자동으로 생성됩니다.
+
+### 배포 시 주의사항
+
+1. **Supabase RLS (Row Level Security)**: 프로덕션에서는 적절한 보안 정책을 설정하세요.
+2. **API Rate Limiting**: OpenAI API의 사용량 제한을 고려하여 Rate Limiting을 구현하는 것을 권장합니다.
+3. **환경별 설정**: 개발/스테이징/프로덕션 환경별로 다른 Supabase 프로젝트를 사용하는 것을 권장합니다.
+
 ## 데이터베이스 스키마
 
 ### 기본 테이블
