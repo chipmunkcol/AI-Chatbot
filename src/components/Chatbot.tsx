@@ -361,14 +361,14 @@ const Chatbot: React.FC = () => {
       )}
 
       {/* 메인 채팅 영역 */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col h-full">
         {/* 채팅 헤더 */}
         <div
           className={`${
             currentCustomBotId
               ? "bg-purple-600 dark:bg-purple-700"
               : "bg-blue-600 dark:bg-blue-700"
-          } text-white p-4`}
+          } text-white p-4 flex-shrink-0`}
         >
           <div className="flex items-center space-x-2">
             <button
@@ -413,8 +413,8 @@ const Chatbot: React.FC = () => {
           </div>
         </div>
 
-        {/* 메시지 영역 */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* 메시지 영역 - viewport 높이에서 헤더와 입력 영역을 제외한 정확한 높이 설정 */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
           {messages.map((message) => (
             <div
               key={message.id}
@@ -514,7 +514,7 @@ const Chatbot: React.FC = () => {
         </div>
 
         {/* 입력 영역 */}
-        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
           {/* 에러 메시지 표시 */}
           {error && (
             <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg flex items-center space-x-2">
