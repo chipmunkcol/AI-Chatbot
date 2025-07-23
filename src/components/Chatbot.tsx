@@ -336,7 +336,7 @@ const Chatbot: React.FC = () => {
   };
 
   return (
-    <div className="flex h-screen max-w-7xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+    <div className="flex h-full max-w-7xl mx-auto bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden">
       {/* 히스토리 사이드바 */}
       {showHistory && (
         <>
